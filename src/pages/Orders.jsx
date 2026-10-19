@@ -1,31 +1,34 @@
 import { useState } from "react";
 import { mockOrders } from "../data/mockOrdes";
+import calculateOrderTotal from "../utils/calculateOrderTotal";
 
 export default function Orders() {
-  const [dataSelected, setDataSelected] = useState("");
-  const [orderState, setOrderState] = useState("");
+  const [selectedDate, setSelectedDate] = useState("");
+  const [selectedStatus, setSelectedStatus] = useState("all");
 
-  const sorted = mockOrders.toSorted(
+  const sortedOrders = mockOrders.toSorted(
     (a, b) =>
       new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime(),
   );
 
-  const filtered = dataSelected
-    ? sorted.filter((item) => item.scheduledAt.split("T")[0] === dataSelected)
-    : sorted;
-
-  const Orders = orderState
-    ? filtered.filter(
-        (order) => order.status === orderState || orderState === "all",
+  const dateFilteredOrders = selectedDate
+    ? sortedOrders.filter(
+        (item) => item.scheduledAt.split("T")[0] === selectedDate,
       )
-    : filtered;
+    : sortedOrders;
+
+  const Orders = selectedStatus
+    ? dateFilteredOrders.filter(
+        (order) => order.status === selectedStatus || selectedStatus === "all",
+      )
+    : dateFilteredOrders;
 
   function handleOrderByDate(e) {
-    setDataSelected(e.target.value);
+    setSelectedDate(e.target.value);
   }
 
   function handleOrderStateFilter(e) {
-    setOrderState(e.target.value);
+    setSelectedStatus(e.target.value);
   }
 
   return (
@@ -35,18 +38,18 @@ export default function Orders() {
           type="date"
           className="bg-amber-50 border-2 rounded-2xl p-2  mb-4"
           onChange={handleOrderByDate}
-          value={dataSelected}
+          value={selectedDate}
         />
         <button
           onClick={() => {
-            setDataSelected("");
-            setOrderState("");
+            setSelectedDate("");
+            setSelectedStatus("");
           }}
           className="bg-black rounded-2xl h-fit p-3 text-white"
         >
           All Orders
         </button>
-        <select onChange={handleOrderStateFilter} value={orderState}>
+        <select onChange={handleOrderStateFilter} value={selectedStatus}>
           <option value={"all"}>جميع الطلبات</option>
           <option value={"confirmed"}>تم التاكيد</option>
           <option value={"delivered"}>تم التسليم</option>
@@ -68,18 +71,16 @@ export default function Orders() {
               <h3>حاله الطلب:{Order.status} </h3>
               <div>
                 الطلب
-                {Order.items.map((order) => (
-                  <div key={order.id} className="flex gap-2">
-                    <h4>{order.name}:</h4>
-                    <h4>الكمية: {order.quantity}</h4>
-                    <h4>{order.unitPrice}ريال</h4>
+                {Order.items.map((item) => (
+                  <div key={item.id} className="flex gap-2">
+                    <h4>{item.name}:</h4>
+                    <h4>الكمية: {item.quantity}</h4>
+                    <h4>{item.unitPrice}ريال</h4>
                   </div>
                 ))}
                 <h4>
                   {"المجموع: "}
-                  {Order.items.reduce((acc, obj) => {
-                    return acc + obj.quantity * obj.unitPrice;
-                  }, 0)}
+                  {calculateOrderTotal(Order.items)}
                   ريال
                 </h4>
               </div>
