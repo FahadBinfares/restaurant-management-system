@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #faf7f2;
+  --color-main: #faf0df;
+  --color-secondary: #75212f;
+  --color-surface: #ffffff;
+  --color-Light-green: #e1f5e7;
+  --color-Light-red: #fbe8e7;
+  --color-Light-yellow: #fff5dc;
+  --color-Text: #784c44;
+}
+
+.sidebar a {
+  -webkit-user-drag: none;
+}
