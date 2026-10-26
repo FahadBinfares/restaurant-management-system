@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   checks:
-    name: Lint, test, and build
+    name: Typecheck, lint, test, and build
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -30,6 +30,9 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
 
       - name: Test
         run: npm run test
