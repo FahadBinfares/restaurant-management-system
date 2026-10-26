@@ -43,7 +43,7 @@ export default function Orders() {
         <button
           onClick={() => {
             setSelectedDate("");
-            setSelectedStatus("");
+            setSelectedStatus("all");
           }}
           className="bg-black rounded-2xl h-fit p-3 text-white"
         >
