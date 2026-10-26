@@ -1,5 +1,19 @@
 # React + Vite
 
+## Incremental TypeScript migration
+
+Run `npm run typecheck` to check frontend types without emitting files. Existing
+JavaScript and JSX remain supported (`allowJs: true`, `checkJs: false`); they are
+not fully type-checked until migrated. New or migrated `.ts` and `.tsx` files in
+`src` use strict checking and are included automatically. Vite client declarations
+provide types for asset imports and `import.meta.env`.
+
+Migrate individual modules as needed while preserving the current routes and RTL
+UI. ESLint supports both JavaScript and TypeScript. Vite continues to handle
+transpilation and bundling; the separate typecheck command runs in PR CI alongside
+lint, tests, and build. Root JavaScript tool configuration files remain outside
+the frontend TypeScript project.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:
