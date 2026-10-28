@@ -39,3 +39,107 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  backend:
+    name: Backend checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      # Ephemeral CI database only; never use these credentials elsewhere.
+      DATABASE_URL: postgresql://restaurant_ci:ci_only_password@127.0.0.1:5432/restaurant_ci
+      HOST: 127.0.0.1
+      PORT: '3001'
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: restaurant_ci
+          POSTGRES_PASSWORD: ci_only_password
+          POSTGRES_DB: restaurant_ci
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U restaurant_ci -d restaurant_ci"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run generate
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+      - name: Apply test database migrations
+        run: npm run db:deploy
+
+      - name: Verify live health and PostgreSQL readiness
+        env:
+          POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          log_file="$RUNNER_TEMP/backend-integration.log"
+          node dist/index.js >"$log_file" 2>&1 &
+          api_pid=$!
+          cleanup() {
+            result=$?
+            trap - EXIT
+            kill "$api_pid" 2>/dev/null || true
+            wait "$api_pid" 2>/dev/null || true
+            if [ "$result" -ne 0 ]; then cat "$log_file"; fi
+            exit "$result"
+          }
+          trap cleanup EXIT
+
+          base_url="http://127.0.0.1:$PORT"
+          curl --fail --silent --show-error --retry 30 --retry-connrefused \
+            --retry-delay 1 --retry-max-time 45 --max-time 5 \
+            "$base_url/api/health" >/dev/null
+
+          assert_status() {
+            actual=$(curl --silent --show-error --max-time 10 \
+              --output /dev/null --write-out '%{http_code}' "$base_url$1")
+            if [ "$actual" != "$2" ]; then
+              echo "$1: expected HTTP $2, got $actual" >&2
+              return 1
+            fi
+            echo "$1: HTTP $actual"
+          }
+
+          kill -0 "$api_pid"
+          assert_status /api/health 200
+          assert_status /api/ready 200
+
+          # Break real connectivity for the same running API, not a mock.
+          docker stop "$POSTGRES_CONTAINER_ID" >/dev/null
+          assert_status /api/ready 503
+          assert_status /api/health 200
+          kill -0 "$api_pid"

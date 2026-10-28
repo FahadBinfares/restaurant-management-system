@@ -1,0 +1,13 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Technical foundation only; intentionally no customer/order/business schema.
+model DevelopmentProbe {
+  id Int @id @default(autoincrement())
+}

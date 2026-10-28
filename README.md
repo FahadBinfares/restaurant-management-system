@@ -1,5 +1,10 @@
 # React + Vite
 
+The independent development API and loopback-only PostgreSQL setup are documented
+in [server/README.md](server/README.md). Run frontend commands from the repository
+root and backend commands from `server/`. This backend is a development foundation,
+not a production-ready service.
+
 ## Incremental TypeScript migration
 
 Run `npm run typecheck` to check frontend types without emitting files. Existing
