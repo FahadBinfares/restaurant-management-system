@@ -148,3 +148,59 @@ jobs:
           assert_status /api/ready 503
           assert_status /api/health 200
           kill -0 "$api_pid"
+
+  e2e:
+    name: End-to-end (browser → API → PostgreSQL)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: restaurant_ci
+          POSTGRES_PASSWORD: ci_only_password
+          POSTGRES_DB: restaurant_ci
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U restaurant_ci -d restaurant_ci"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+    env:
+      # Ephemeral CI database only; e2e-prepare refuses anything but a loopback *_e2e database.
+      E2E_DATABASE_URL: postgresql://restaurant_ci:ci_only_password@127.0.0.1:5432/restaurant_e2e
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix server ci
+          npm --prefix server run generate
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run end-to-end tests
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

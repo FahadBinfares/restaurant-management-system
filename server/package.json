@@ -19,7 +19,8 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "admin:create": "tsx src/scripts/create-admin.ts",
     "admin:create:prod": "node dist/scripts/create-admin.js",
-    "db:seed-dev": "tsx src/scripts/seed-dev.ts"
+    "db:seed-dev": "tsx src/scripts/seed-dev.ts",
+    "e2e:serve": "tsx src/scripts/e2e-prepare.ts && tsx src/index.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",

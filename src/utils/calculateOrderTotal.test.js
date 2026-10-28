@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import calculateOrderTotal from "./calculateOrderTotal";
-import { mockOrders } from "../data/mockOrdes";
+
+// Items of the original prototype sample order (formerly src/data/mockOrdes.ts).
+const sampleOrderItems = [
+  { id: 1, name: "باقة وليمة 20 شخص", quantity: 1, unitPrice: 1500 },
+  { id: 2, name: "سلطة", quantity: 3, unitPrice: 30 },
+];
 
 describe("calculateOrderTotal", () => {
   it("returns zero for an empty array", () => {
@@ -8,7 +13,7 @@ describe("calculateOrderTotal", () => {
   });
 
   it("calculates the existing sample order total", () => {
-    expect(calculateOrderTotal(mockOrders[0].items)).toBe(1590);
+    expect(calculateOrderTotal(sampleOrderItems)).toBe(1590);
   });
 
   it("multiplies each quantity by its price and sums different lines", () => {
