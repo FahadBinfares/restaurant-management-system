@@ -18,7 +18,8 @@ function setup() {
 }
 
 describe("customer request contracts", () => {
-  it.each(["0512345678", "+966512345678", "966512345678", " 0512345678 "])("normalizes %s", async (phone) => {
+  it.each(["0512345678", "+966512345678", "966512345678", " 0512345678 ", "05 12345678", "٠٥١٢٣٤٥٦٧٨"])(
+    "normalizes %s", async (phone) => {
     const { app, store, customer } = setup();
     const response = await request(app).post("/api/customers").send({ name: " Test customer ", phone });
     expect(response.status).toBe(201);
@@ -27,7 +28,7 @@ describe("customer request contracts", () => {
     expect(response.body.data.id).toBe(customer.id);
   });
 
-  it.each(["", "512345678", "+9660512345678", "05 12345678", "٠٥١٢٣٤٥٦٧٨", "05123456789"])(
+  it.each(["", "51234567", "+9660512345678", "0412345678", "05123456789", 512345678])(
     "rejects malformed phone %s before storage", async (phone) => {
       const { app, store } = setup();
       const response = await request(app).post("/api/customers").send({ name: "Test", phone });
@@ -65,9 +66,20 @@ describe("customer request contracts", () => {
     const response = await request(app).get("/api/customers");
     expect(response.status).toBe(200);
     expect(response.body.pagination).toEqual({ page: 1, pageSize: 20, total: 1 });
-    expect(store.list).toHaveBeenCalledWith(1, 20);
+    expect(store.list).toHaveBeenCalledWith(1, 20, undefined);
     await request(app).get("/api/customers?page=2&pageSize=100").expect(200);
-    expect(store.list).toHaveBeenLastCalledWith(2, 100);
+    expect(store.list).toHaveBeenLastCalledWith(2, 100, undefined);
+  });
+
+  it.each([
+    ["0512345678", { phone: "+966512345678" }],
+    ["051 234", { phoneFragment: "51234" }],
+    [" محمد ", { name: "محمد" }],
+    ["   ", undefined],
+  ])("parses search %j", async (q, expected) => {
+    const { app, store } = setup();
+    await request(app).get("/api/customers").query({ q }).expect(200);
+    expect(store.list).toHaveBeenCalledWith(1, 20, expected);
   });
 
   it.each(["page=0", "page=-1", "page=1.5", "page=1e2", "page=1000001", "pageSize=0",
@@ -95,9 +107,17 @@ describe("customer request contracts", () => {
     expect(response.body).toEqual({ error: { code: "PHONE_CONFLICT", message: "Phone already registered" } });
   });
 
-  it("maps storage failures to a generic 503 on all customer endpoints", async () => {
+  it("maps unexpected errors to 500 rather than a database outage", async () => {
     const { app, store } = setup();
-    const error = new Error("private connection string");
+    store.list.mockRejectedValue(new TypeError("private details"));
+    const response = await request(app).get("/api/customers");
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ error: { code: "INTERNAL_ERROR", message: "Internal server error" } });
+  });
+
+  it("maps connectivity failures to a generic 503 on all customer endpoints", async () => {
+    const { app, store } = setup();
+    const error = Object.assign(new Error("private connection string"), { code: "P1001" });
     store.create.mockRejectedValue(error);
     store.list.mockRejectedValue(error);
     store.get.mockRejectedValue(error);

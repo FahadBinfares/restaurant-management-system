@@ -108,6 +108,22 @@ describe("Customer API with real PostgreSQL", () => {
     await request(app).get("/api/customers?pageSize=101").expect(400);
   });
 
+  it("searches by name fragment, full phone in any format, and phone digits", async () => {
+    await database.client.customer.createMany({ data: [
+      { name: "محمد العتيبي", phone: "+966512345678" },
+      { name: "Sara Ahmed", phone: "+966598765432" },
+    ] });
+    const names = async (q: string) => (await request(app).get("/api/customers").query({ q }))
+      .body.data.map((row: { name: string }) => row.name);
+    expect(await names("العتيبي")).toEqual(["محمد العتيبي"]);
+    expect(await names("sara")).toEqual(["Sara Ahmed"]);
+    expect(await names("051 234 5678")).toEqual(["محمد العتيبي"]);
+    expect(await names("٠٥٩٨٧٦٥٤٣٢")).toEqual(["Sara Ahmed"]);
+    expect(await names("7654")).toEqual(["Sara Ahmed"]);
+    const counted = await request(app).get("/api/customers").query({ q: "nobody" });
+    expect(counted.body).toEqual({ data: [], pagination: { page: 1, pageSize: 20, total: 0 } });
+  });
+
   it("returns a safe 503 when actual database authentication fails", async () => {
     const unavailableUrl = new URL(url);
     unavailableUrl.password = randomUUID();

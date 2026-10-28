@@ -101,10 +101,11 @@ notes, and UTC `createdAt`/`updatedAt` timestamps. Names are trimmed, nonempty, 
 at most 120 characters; notes are optional/null or a trimmed string up to 2000
 characters. Unknown body fields are rejected; JSON bodies are limited to 16 KiB.
 
-Phone normalization is deliberately narrow: after trimming surrounding whitespace,
-accept exactly ASCII `05xxxxxxxx`, `9665xxxxxxxx`, or `+9665xxxxxxxx`. Store only
-`+9665xxxxxxxx`. Reject spaces inside the number, hyphens, Arabic-Indic digits,
-other country codes, missing prefixes, and wrong lengths rather than guessing.
+Phone normalization accepts the unambiguous ways staff type Saudi mobiles:
+prefixes `05`, `5`, `9665`, `+9665`, or `009665`; separators (spaces, `-`, `.`,
+parentheses); and Arabic-Indic digits (`٠٥١٢...`). Store only `+9665xxxxxxxx`.
+Reject other country codes, non-mobile prefixes, letters, and wrong lengths
+rather than guessing.
 This validates format, not carrier ownership or whether a number is assigned.
 PostgreSQL enforces canonical format and uniqueness, including concurrent writes.
 
@@ -126,6 +127,10 @@ Ordering is newest `createdAt` first, then UUID descending to break timestamp ti
 the count and page are read in one repeatable-read transaction. Offset pages can
 still shift between separate requests when new customers are inserted.
 
+Optional `q` (at most 120 characters) filters the list: a value that normalizes to a
+full mobile matches that phone exactly; three or more digits (separators ignored)
+match a phone fragment; anything else is a case-insensitive name substring.
+
 Customer errors use `{ "error": { "code": "...", "message": "..." } }`:
 
 | HTTP | Code | Meaning |
@@ -133,11 +138,13 @@ Customer errors use `{ "error": { "code": "...", "message": "..." } }`:
 | 400 | INVALID_INPUT | Invalid body, JSON, UUID, or pagination |
 | 409 | PHONE_CONFLICT | Phone already registered in any accepted format |
 | 413 | PAYLOAD_TOO_LARGE | JSON body exceeds limit |
-| 503 | DATABASE_UNAVAILABLE | Customer storage failed; no raw DB error is returned |
+| 500 | INTERNAL_ERROR | Unexpected server error (not a connectivity failure) |
+| 503 | DATABASE_UNAVAILABLE | Database unreachable, authentication failed, or pool timeout |
 
 Customer responses use `Cache-Control: no-store`. Health/readiness contracts remain
-unchanged. No customer UI, search, edits, address book, or access-control policy is
-implemented in this issue.
+unchanged. No customer UI, edits, address book, or access-control policy is
+implemented in this issue. **These endpoints are unauthenticated: never expose
+them outside loopback development until authentication lands.**
 
 ### Real PostgreSQL integration tests
 
