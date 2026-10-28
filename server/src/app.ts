@@ -3,7 +3,12 @@ import type { RequestHandler } from "express";
 import { createAuthRouter } from "./auth/routes.js";
 import type { AppContext } from "./context.js";
 import { AppError, errorHandler } from "./http/errors.js";
+import { createCatalogRouter } from "./modules/catalog.js";
 import { createCustomersRouter } from "./modules/customers.js";
+import { createDeliveryRouter } from "./modules/delivery.js";
+import { createOrdersRouter } from "./modules/orders/routes.js";
+import { createPaymentsRouter } from "./modules/payments.js";
+import { createReportsRouter } from "./modules/reports.js";
 import { createEmployeesRouter } from "./modules/employees.js";
 import { createAuditRouter, createSettingsRouter } from "./modules/settings.js";
 
@@ -61,6 +66,10 @@ export function createApp(checkDatabase: () => Promise<void>, context?: AppConte
     app.use("/api/settings", createSettingsRouter(context));
     app.use("/api/audit", createAuditRouter(context));
     app.use("/api/customers", createCustomersRouter(context));
+    app.use("/api/catalog", createCatalogRouter(context));
+    app.use("/api/orders", createOrdersRouter(context));
+    // These routers span several resource paths, so they mount at /api.
+    app.use("/api", createPaymentsRouter(context), createDeliveryRouter(context), createReportsRouter(context));
   }
 
   app.use((_request, response) => {

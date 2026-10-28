@@ -77,3 +77,40 @@ describe("audit log", () => {
     await expect(h.db.auditLog.delete({ where: { id: entry.id } })).rejects.toThrow();
   });
 });
+
+describe("catalog", () => {
+  it("is readable by staff but managed only with manage_products, with audited price changes", async () => {
+    const { agent: admin } = await h.signIn("admin");
+    const { agent: reception } = await h.signIn("reception");
+    await reception.post("/api/catalog/categories").send({ name: "مشروبات" }).expect(403);
+    const category = await admin.post("/api/catalog/categories").send({ name: "مشروبات" }).expect(201);
+    await admin.post("/api/catalog/categories").send({ name: "مشروبات" }).expect(409);
+    const product = await admin.post("/api/catalog/products")
+      .send({ categoryId: category.body.data.id, name: "لبن", price: 300 }).expect(201);
+    await admin.post("/api/catalog/products")
+      .send({ categoryId: category.body.data.id, name: "عصير", price: 1.5 }).expect(400);
+    await admin.patch(`/api/catalog/products/${product.body.data.id}`).send({ price: 350 }).expect(200);
+    const audit = await h.db.auditLog.findFirstOrThrow({ where: { action: "product.price_change", entityId: product.body.data.id } });
+    expect(audit.before).toEqual({ price: 300 });
+    expect(audit.after).toEqual({ price: 350 });
+    const visible = await reception.get("/api/catalog/products").expect(200);
+    expect(visible.body.data.map((p: { name: string }) => p.name)).toContain("لبن");
+    await admin.patch(`/api/catalog/products/${product.body.data.id}`).send({ active: false }).expect(200);
+    const hidden = await reception.get("/api/catalog/products").expect(200);
+    expect(hidden.body.data.map((p: { name: string }) => p.name)).not.toContain("لبن");
+  });
+
+  it("validates package contents", async () => {
+    const { agent: admin } = await h.signIn("admin");
+    const category = await admin.post("/api/catalog/categories").send({ name: "رئيسي" }).expect(201);
+    const product = await admin.post("/api/catalog/products")
+      .send({ categoryId: category.body.data.id, name: "مندي", price: 9_000 }).expect(201);
+    const id = product.body.data.id;
+    await admin.post("/api/catalog/packages").send({ name: "باقة", price: 1, items: [] }).expect(400);
+    await admin.post("/api/catalog/packages")
+      .send({ name: "باقة", price: 1, items: [{ productId: id, quantity: 1 }, { productId: id, quantity: 2 }] }).expect(400);
+    const created = await admin.post("/api/catalog/packages")
+      .send({ name: "باقة 10", guestCount: 10, price: 80_000, items: [{ productId: id, quantity: 3 }] }).expect(201);
+    expect(created.body.data.items[0]).toMatchObject({ quantity: 3, product: { name: "مندي" } });
+  });
+});

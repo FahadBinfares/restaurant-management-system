@@ -35,6 +35,11 @@ model Employee {
   sessions            Session[]
   permissionOverrides PermissionOverride[]
   auditEntries        AuditLog[]
+  ordersCreated       Order[]              @relation("OrderCreatedBy")
+  ordersUpdated       Order[]              @relation("OrderUpdatedBy")
+  ordersConfirmed     Order[]              @relation("OrderConfirmedBy")
+  paymentsRecorded    Payment[]            @relation("PaymentRecordedBy")
+  paymentsVoided      Payment[]            @relation("PaymentVoidedBy")
 }
 
 /// Individual grant (`granted = true`) or revocation (`false`) on top of the role defaults.
@@ -102,6 +107,7 @@ model Customer {
   createdAt  DateTime          @default(now()) @db.Timestamptz(3)
   updatedAt  DateTime          @updatedAt @db.Timestamptz(3)
   addresses  CustomerAddress[]
+  orders     Order[]
 
   @@index([createdAt, id])
 }
@@ -118,4 +124,261 @@ model CustomerAddress {
   customer   Customer  @relation(fields: [customerId], references: [id], onDelete: Restrict)
 
   @@index([customerId])
+}
+
+// ---------------------------------------------------------------------------
+// Catalog. All money is integer halalas (1 SAR = 100 halalas), VAT-inclusive.
+// ---------------------------------------------------------------------------
+
+model Category {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String    @unique @db.VarChar(80)
+  sortOrder Int       @default(0)
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  products  Product[]
+}
+
+model Product {
+  id           String        @id @default(uuid()) @db.Uuid
+  categoryId   String        @db.Uuid
+  name         String        @db.VarChar(120)
+  description  String?       @db.VarChar(1000)
+  price        Int
+  active       Boolean       @default(true)
+  createdAt    DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime      @updatedAt @db.Timestamptz(3)
+  category     Category      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  packageItems PackageItem[]
+
+  @@index([categoryId])
+}
+
+model Package {
+  id          String        @id @default(uuid()) @db.Uuid
+  name        String        @unique @db.VarChar(120)
+  description String?       @db.VarChar(1000)
+  guestCount  Int?
+  price       Int
+  active      Boolean       @default(true)
+  createdAt   DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime      @updatedAt @db.Timestamptz(3)
+  items       PackageItem[]
+}
+
+model PackageItem {
+  id        String  @id @default(uuid()) @db.Uuid
+  packageId String  @db.Uuid
+  productId String  @db.Uuid
+  quantity  Int
+  position  Int     @default(0)
+  package   Package @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@unique([packageId, productId])
+}
+
+// ---------------------------------------------------------------------------
+// Orders
+// ---------------------------------------------------------------------------
+
+enum OrderType {
+  banquet
+  individual
+}
+
+enum OrderStatus {
+  draft
+  confirmed
+  preparing
+  ready
+  completed
+  cancelled
+}
+
+enum FulfillmentType {
+  delivery
+  pickup
+}
+
+enum DeliveryStatus {
+  unassigned
+  assigned
+  out_for_delivery
+  delivered
+  failed
+}
+
+enum PaymentStatus {
+  unpaid
+  partially_paid
+  paid
+}
+
+enum DiscountType {
+  none
+  fixed
+  percent
+}
+
+enum LineKind {
+  product
+  package
+  custom
+}
+
+/// Per-year counter behind ORD-YYYY-NNNN numbers.
+model OrderSequence {
+  year      Int @id
+  lastValue Int
+}
+
+model Order {
+  id              String          @id @default(uuid()) @db.Uuid
+  number          String          @unique @db.VarChar(20)
+  /// Client-generated key making order creation idempotent against double submits.
+  clientRequestId String?         @unique @db.Uuid
+  orderType       OrderType       @default(individual)
+  status          OrderStatus     @default(draft)
+  customerId      String          @db.Uuid
+  customerName    String          @db.VarChar(120)
+  customerPhone   String          @db.VarChar(13)
+  guestCount      Int?
+  fulfillmentType FulfillmentType @default(delivery)
+  scheduledAt     DateTime?       @db.Timestamptz(3)
+  deliveryAddress String?         @db.VarChar(500)
+  deliveryMapsUrl String?         @db.VarChar(1000)
+  deliveryNotes   String?         @db.VarChar(1000)
+  kitchenNotes    String?         @db.VarChar(2000)
+
+  deliveryFee    Int          @default(0)
+  discountType   DiscountType @default(none)
+  /// Halalas for `fixed`; basis points (1/100 of a percent) for `percent`.
+  discountValue  Int          @default(0)
+  discountReason String?      @db.VarChar(500)
+  vatRateBp      Int          @default(1500)
+  subtotal       Int          @default(0)
+  discountAmount Int          @default(0)
+  total          Int          @default(0)
+  vatAmount      Int          @default(0)
+
+  /// Valid payments minus valid refunds; maintained together with the ledger.
+  paidAmount    Int           @default(0)
+  paymentStatus PaymentStatus @default(unpaid)
+
+  deliveryStatus        DeliveryStatus?
+  driverId              String?         @db.Uuid
+  deliveryFailureReason String?         @db.VarChar(500)
+  deliveredAt           DateTime?       @db.Timestamptz(3)
+
+  version       Int       @default(1)
+  confirmedAt   DateTime? @db.Timestamptz(3)
+  confirmedById String?   @db.Uuid
+  completedAt   DateTime? @db.Timestamptz(3)
+  cancelledAt   DateTime? @db.Timestamptz(3)
+  cancelReason  String?   @db.VarChar(500)
+  archivedAt    DateTime? @db.Timestamptz(3)
+  createdById   String    @db.Uuid
+  updatedById   String    @db.Uuid
+  createdAt     DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @db.Timestamptz(3)
+
+  customer    Customer    @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  driver      Driver?     @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  createdBy   Employee    @relation("OrderCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy   Employee    @relation("OrderUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+  confirmedBy Employee?   @relation("OrderConfirmedBy", fields: [confirmedById], references: [id], onDelete: Restrict)
+  lines       OrderLine[]
+  payments    Payment[]
+
+  @@index([status, scheduledAt])
+  @@index([scheduledAt])
+  @@index([customerId])
+  @@index([driverId, scheduledAt])
+}
+
+/// Snapshot of what was sold: names and prices are copied, never re-read from the catalog.
+model OrderLine {
+  id                  String               @id @default(uuid()) @db.Uuid
+  orderId             String               @db.Uuid
+  position            Int
+  kind                LineKind
+  productId           String?              @db.Uuid
+  packageId           String?              @db.Uuid
+  name                String               @db.VarChar(120)
+  /// Catalog price when the line was added; null for custom items.
+  catalogPrice        Int?
+  unitPrice           Int
+  quantity            Int
+  lineTotal           Int
+  priceOverrideReason String?              @db.VarChar(500)
+  notes               String?              @db.VarChar(1000)
+  order               Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  components          OrderLineComponent[]
+
+  @@index([orderId])
+}
+
+/// Order-specific contents of a package line; editing these never changes the catalog package.
+model OrderLineComponent {
+  id        String    @id @default(uuid()) @db.Uuid
+  lineId    String    @db.Uuid
+  position  Int
+  productId String?   @db.Uuid
+  name      String    @db.VarChar(120)
+  quantity  Int
+  line      OrderLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
+
+  @@index([lineId])
+}
+
+// ---------------------------------------------------------------------------
+// Payments (append-only ledger) and delivery
+// ---------------------------------------------------------------------------
+
+enum PaymentKind {
+  payment
+  refund
+}
+
+enum PaymentMethod {
+  cash
+  bank_transfer
+  card_pos
+  payment_link
+}
+
+model Payment {
+  id              String        @id @default(uuid()) @db.Uuid
+  clientRequestId String?       @unique @db.Uuid
+  orderId         String        @db.Uuid
+  kind            PaymentKind
+  method          PaymentMethod
+  amount          Int
+  reference       String?       @db.VarChar(120)
+  notes           String?       @db.VarChar(500)
+  receivedAt      DateTime      @db.Timestamptz(3)
+  recordedById    String        @db.Uuid
+  createdAt       DateTime      @default(now()) @db.Timestamptz(3)
+  voidedAt        DateTime?     @db.Timestamptz(3)
+  voidedById      String?       @db.Uuid
+  voidReason      String?       @db.VarChar(500)
+  order           Order         @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  recordedBy      Employee      @relation("PaymentRecordedBy", fields: [recordedById], references: [id], onDelete: Restrict)
+  voidedBy        Employee?     @relation("PaymentVoidedBy", fields: [voidedById], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([receivedAt])
+}
+
+model Driver {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @db.VarChar(120)
+  phone     String   @unique @db.VarChar(13)
+  notes     String?  @db.VarChar(500)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  orders    Order[]
 }

@@ -3,6 +3,7 @@ import { createApp } from "./app.js";
 import { createDatabase } from "./database.js";
 import { parseEnvironment } from "./env.js";
 import type { AppContext } from "./context.js";
+import { archiveStaleDrafts } from "./modules/drafts.js";
 
 function start() {
   const env = parseEnvironment(process.env);
@@ -20,11 +21,18 @@ function start() {
   const server = createApp(database.check, context).listen(env.PORT, env.HOST, () => {
     console.info(`API (${env.APP_ENV}) listening on ${env.HOST}:${env.PORT}`);
   });
+  const archiveDrafts = () => archiveStaleDrafts(context)
+    .then((count) => { if (count > 0) console.info(`Archived ${count} inactive draft(s)`); })
+    .catch(() => console.error("Draft archiving failed"));
+  void archiveDrafts();
+  const archiveTimer = setInterval(archiveDrafts, 60 * 60_000);
+  archiveTimer.unref();
   let shuttingDown = false;
 
   async function shutdown(exitCode: number) {
     if (shuttingDown) return;
     shuttingDown = true;
+    clearInterval(archiveTimer);
     const deadline = setTimeout(() => {
       console.error("API shutdown timed out");
       process.exit(1);
