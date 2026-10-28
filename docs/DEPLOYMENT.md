@@ -44,7 +44,7 @@ Production deploys the **same image tags** that staging ran.
    and enable automatic renewal with a hook that reloads the edge
    (`docker compose -p rms-edge -f /opt/rms/compose.edge.yaml exec edge nginx -s reload`).
 8. First deployment: `/opt/rms/deploy.sh <commit-sha>`, then create the first administrator:
-   `docker compose -p rms-blue -f compose.app.yaml exec api node dist/scripts/create-admin.js --name "…" --phone 05…`.
+   `docker exec -it rms-blue-api-1 node dist/scripts/create-admin.js --name "…" --phone 05…`.
 
 ## GitHub configuration
 
