@@ -2,11 +2,12 @@ import "dotenv/config";
 import { createApp } from "./app.js";
 import { createDatabase } from "./database.js";
 import { parseEnvironment } from "./env.js";
+import { createCustomerStore } from "./customer-store.js";
 
 function start() {
   const env = parseEnvironment(process.env);
   const database = createDatabase(env.DATABASE_URL);
-  const server = createApp(database.check).listen(env.PORT, env.HOST, () => {
+  const server = createApp(database.check, createCustomerStore(database.client)).listen(env.PORT, env.HOST, () => {
     console.info(`Development API listening on ${env.HOST}:${env.PORT}`);
   });
   let shuttingDown = false;

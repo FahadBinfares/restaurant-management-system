@@ -1,7 +1,9 @@
 import express from "express";
 import type { ErrorRequestHandler } from "express";
+import { createCustomersRouter } from "./customers.js";
+import type { CustomerStore } from "./customers.js";
 
-export function createApp(checkDatabase: () => Promise<void>) {
+export function createApp(checkDatabase: () => Promise<void>, customers?: CustomerStore) {
   const app = express();
   app.disable("x-powered-by");
 
@@ -18,6 +20,8 @@ export function createApp(checkDatabase: () => Promise<void>) {
       response.status(503).json({ status: "not_ready" });
     }
   });
+
+  if (customers) app.use("/api/customers", createCustomersRouter(customers));
 
   app.use((_request, response) => {
     response.status(404).json({ error: "Not found" });

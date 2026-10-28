@@ -7,7 +7,18 @@ datasource db {
   provider = "postgresql"
 }
 
-// Technical foundation only; intentionally no customer/order/business schema.
+// Technical probe retained from the initial foundation migration.
 model DevelopmentProbe {
   id Int @id @default(autoincrement())
+}
+
+model Customer {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @db.VarChar(120)
+  phone     String   @unique @db.VarChar(13)
+  notes     String?  @db.VarChar(2000)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([createdAt, id])
 }

@@ -1,7 +1,8 @@
 # Local backend foundation
 
-Development only, not production-ready. This server exposes only health and
-readiness endpoints. It has no authentication or customer/order/payment APIs.
+Development only, not production-ready. This server exposes health/readiness and
+a minimal customer API. It has no authentication or authorization. **Do not expose
+it publicly or use real customer personal data until access control is implemented.**
 The React frontend remains independent and does not call this server yet.
 
 ## Prerequisites and startup
@@ -66,8 +67,9 @@ does not need a running DB or `DATABASE_URL`. Run it after every clean install o
 schema change, before typechecking/building. The PostgreSQL driver adapter reads
 the validated runtime URL; no database URL is embedded in generated source.
 
-The initial migration creates only a technical `DevelopmentProbe` table, with no
-business data model or seeded rows. `npm run db:deploy` applies the checked-in
+The foundation migration creates a technical `DevelopmentProbe` table; the next
+migration adds the minimal `Customer` table, without addresses or orders. No rows
+are seeded. `npm run db:deploy` applies the checked-in
 migration reproducibly and is safe to repeat on this local development database.
 For a future intentional schema change, with PostgreSQL running, use
 `npm run db:migrate -- --name descriptive_name`, review the generated SQL, and
@@ -91,6 +93,75 @@ they require no database, `.env`, or secrets. They cover liveness independent of
 the DB, successful/failed/recovered readiness, JSON 404 responses, and environment
 validation. PR CI runs these same checks in a separate backend job; frontend
 checks remain in their existing job.
+
+## Customer API (synthetic local/test data only)
+
+The customer record contains a generated UUID, name, canonical phone, nullable
+notes, and UTC `createdAt`/`updatedAt` timestamps. Names are trimmed, nonempty, and
+at most 120 characters; notes are optional/null or a trimmed string up to 2000
+characters. Unknown body fields are rejected; JSON bodies are limited to 16 KiB.
+
+Phone normalization is deliberately narrow: after trimming surrounding whitespace,
+accept exactly ASCII `05xxxxxxxx`, `9665xxxxxxxx`, or `+9665xxxxxxxx`. Store only
+`+9665xxxxxxxx`. Reject spaces inside the number, hyphens, Arabic-Indic digits,
+other country codes, missing prefixes, and wrong lengths rather than guessing.
+This validates format, not carrier ownership or whether a number is assigned.
+PostgreSQL enforces canonical format and uniqueness, including concurrent writes.
+
+```sh
+curl -i http://127.0.0.1:3001/api/customers \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"عميل اختبار","phone":"0500000000","notes":"Synthetic example only"}'
+curl -i 'http://127.0.0.1:3001/api/customers?page=1&pageSize=20'
+# Replace UUID with the id returned by POST:
+curl -i http://127.0.0.1:3001/api/customers/UUID
+```
+
+POST returns 201, a `Location` header, and `{ "data": customer }`. Get-by-ID returns
+200 with the same envelope, 400 for an invalid UUID, or 404 if not found. List returns
+`{ "data": [...], "pagination": { "page": 1, "pageSize": 20, "total": 0 } }`.
+Page defaults to 1 (maximum 1,000,000); pageSize defaults to 20 (maximum 100), both
+strict positive decimal integers. Unknown/repeated query parameters are rejected.
+Ordering is newest `createdAt` first, then UUID descending to break timestamp ties;
+the count and page are read in one repeatable-read transaction. Offset pages can
+still shift between separate requests when new customers are inserted.
+
+Customer errors use `{ "error": { "code": "...", "message": "..." } }`:
+
+| HTTP | Code | Meaning |
+| --- | --- | --- |
+| 400 | INVALID_INPUT | Invalid body, JSON, UUID, or pagination |
+| 409 | PHONE_CONFLICT | Phone already registered in any accepted format |
+| 413 | PAYLOAD_TOO_LARGE | JSON body exceeds limit |
+| 503 | DATABASE_UNAVAILABLE | Customer storage failed; no raw DB error is returned |
+
+Customer responses use `Cache-Control: no-store`. Health/readiness contracts remain
+unchanged. No customer UI, search, edits, address book, or access-control policy is
+implemented in this issue.
+
+### Real PostgreSQL integration tests
+
+`npm run test` retains the database-independent tests. The separate integration
+command requires an explicit loopback `TEST_DATABASE_URL` whose database name ends
+in `_test` or `_ci`, and a local test user allowed to create/drop databases:
+
+```sh
+# First-time creation of a local administrative test database:
+docker compose exec postgres sh -c 'createdb -U "$POSTGRES_USER" restaurant_test'
+# Public development-only sample credentials; use your own local settings if changed:
+TEST_DATABASE_URL=postgresql://restaurant_dev:local-development-only@127.0.0.1:5433/restaurant_test \
+  npm run test:integration
+```
+
+Each run creates a unique `restaurant_test_<random>` database, applies all committed
+Prisma migrations, exercises the real API/Prisma/PostgreSQL path, and drops only that
+database at teardown. It never clears the supplied base database or falls back to
+`DATABASE_URL`. All records are synthetic. Coverage includes persistence, phone
+normalization/uniqueness under concurrency, get/list, invalid input, pagination ties,
+and actual authentication failure. CI requires these tests before its existing live
+health/readiness checks, using its ephemeral PostgreSQL service. On forced process
+termination a test database may remain; remove only its exact generated name after
+confirming no test run uses it.
 
 Build output is ignored under `dist/`. `npm start` uses the compiled server,
 while `npm run dev` watches TypeScript. Neither command generates Prisma or applies

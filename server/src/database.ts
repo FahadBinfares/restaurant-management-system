@@ -10,6 +10,7 @@ export function createDatabase(connectionString: string) {
   });
   const client = new PrismaClient({ adapter });
   return {
+    client,
     async check() {
       await client.$queryRaw`SELECT 1`;
     },
