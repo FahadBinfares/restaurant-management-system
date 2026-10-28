@@ -36,6 +36,6 @@ describe("development API", () => {
   it("returns a JSON 404 for unknown endpoints", async () => {
     const response = await request(createApp(vi.fn())).get("/api/customers");
     expect(response.status).toBe(404);
-    expect(response.body).toEqual({ error: "Not found" });
+    expect(response.body).toEqual({ error: { code: "NOT_FOUND", message: "Not found" } });
   });
 });

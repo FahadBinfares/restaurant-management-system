@@ -2,13 +2,23 @@ import "dotenv/config";
 import { createApp } from "./app.js";
 import { createDatabase } from "./database.js";
 import { parseEnvironment } from "./env.js";
-import { createCustomerStore } from "./customer-store.js";
+import type { AppContext } from "./context.js";
 
 function start() {
   const env = parseEnvironment(process.env);
   const database = createDatabase(env.DATABASE_URL);
-  const server = createApp(database.check, createCustomerStore(database.client)).listen(env.PORT, env.HOST, () => {
-    console.info(`Development API listening on ${env.HOST}:${env.PORT}`);
+  const context: AppContext = {
+    db: database.client,
+    now: () => new Date(),
+    config: {
+      secureCookies: env.SECURE_COOKIES,
+      requireAdminMfa: env.REQUIRE_ADMIN_MFA,
+      sessionMaxHours: env.SESSION_MAX_HOURS,
+      trustProxy: env.TRUST_PROXY,
+    },
+  };
+  const server = createApp(database.check, context).listen(env.PORT, env.HOST, () => {
+    console.info(`API (${env.APP_ENV}) listening on ${env.HOST}:${env.PORT}`);
   });
   let shuttingDown = false;
 

@@ -1,11 +1,40 @@
 import express from "express";
-import type { ErrorRequestHandler } from "express";
-import { createCustomersRouter } from "./customers.js";
-import type { CustomerStore } from "./customers.js";
+import type { RequestHandler } from "express";
+import { createAuthRouter } from "./auth/routes.js";
+import type { AppContext } from "./context.js";
+import { AppError, errorHandler } from "./http/errors.js";
+import { createCustomersRouter } from "./modules/customers.js";
+import { createEmployeesRouter } from "./modules/employees.js";
+import { createAuditRouter, createSettingsRouter } from "./modules/settings.js";
 
-export function createApp(checkDatabase: () => Promise<void>, customers?: CustomerStore) {
+const securityHeaders: RequestHandler = (_request, response, next) => {
+  response.set({
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
+    "Cross-Origin-Resource-Policy": "same-origin",
+  });
+  next();
+};
+
+/**
+ * CSRF defence in depth on top of SameSite=Strict cookies: state-changing requests
+ * must carry a custom header, which cross-site forms cannot send and cross-origin
+ * scripts cannot send without a CORS preflight this API never approves.
+ */
+const requireApiClientHeader: RequestHandler = (request, _response, next) => {
+  if (!["GET", "HEAD", "OPTIONS"].includes(request.method) && request.get("x-requested-with") !== "rms") {
+    throw new AppError(403, "CSRF_REJECTED", "Missing X-Requested-With header");
+  }
+  next();
+};
+
+export function createApp(checkDatabase: () => Promise<void>, context?: AppContext) {
   const app = express();
   app.disable("x-powered-by");
+  app.set("trust proxy", context?.config.trustProxy ? 1 : false);
+  app.use(securityHeaders);
 
   app.get("/api/health", (_request, response) => {
     response.json({ status: "ok" });
@@ -21,19 +50,22 @@ export function createApp(checkDatabase: () => Promise<void>, customers?: Custom
     }
   });
 
-  if (customers) app.use("/api/customers", createCustomersRouter(customers));
+  if (context) {
+    app.use("/api", (_request, response, next) => {
+      response.set("Cache-Control", "no-store");
+      next();
+    });
+    app.use("/api", requireApiClientHeader, express.json({ limit: "256kb" }));
+    app.use("/api/auth", createAuthRouter(context));
+    app.use("/api/employees", createEmployeesRouter(context));
+    app.use("/api/settings", createSettingsRouter(context));
+    app.use("/api/audit", createAuditRouter(context));
+    app.use("/api/customers", createCustomersRouter(context));
+  }
 
   app.use((_request, response) => {
-    response.status(404).json({ error: "Not found" });
+    response.status(404).json({ error: { code: "NOT_FOUND", message: "Not found" } });
   });
-
-  const handleError: ErrorRequestHandler = (_error, _request, response, next) => {
-    if (response.headersSent) {
-      next(_error);
-      return;
-    }
-    response.status(500).json({ error: "Internal server error" });
-  };
-  app.use(handleError);
+  app.use(errorHandler);
   return app;
 }

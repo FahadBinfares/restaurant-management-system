@@ -6,8 +6,20 @@ describe("environment validation", () => {
 
   it("validates the URL and supplies loopback/port defaults", () => {
     expect(parseEnvironment({ DATABASE_URL: url })).toEqual({
-      DATABASE_URL: url, HOST: "127.0.0.1", PORT: 3001,
+      DATABASE_URL: url, HOST: "127.0.0.1", PORT: 3001, APP_ENV: "development",
+      SECURE_COOKIES: false, REQUIRE_ADMIN_MFA: false, TRUST_PROXY: false, SESSION_MAX_HOURS: 12,
     });
+  });
+
+  it("defaults to secure cookies and admin MFA in deployed environments", () => {
+    expect(parseEnvironment({ DATABASE_URL: url, APP_ENV: "staging" })).toMatchObject({
+      SECURE_COOKIES: true, REQUIRE_ADMIN_MFA: true,
+    });
+  });
+
+  it("refuses to weaken production security", () => {
+    expect(() => parseEnvironment({ DATABASE_URL: url, APP_ENV: "production", SECURE_COOKIES: "false" }))
+      .toThrow("Invalid environment configuration: APP_ENV");
   });
 
   it.each([{}, { DATABASE_URL: "https://example.com" },

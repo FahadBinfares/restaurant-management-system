@@ -7,18 +7,115 @@ datasource db {
   provider = "postgresql"
 }
 
-// Technical probe retained from the initial foundation migration.
-model DevelopmentProbe {
-  id Int @id @default(autoincrement())
+// ---------------------------------------------------------------------------
+// Employees, sessions, and access control
+// ---------------------------------------------------------------------------
+
+enum Role {
+  admin
+  reception
+  operations
 }
 
+model Employee {
+  id                 String    @id @default(uuid()) @db.Uuid
+  name               String    @db.VarChar(120)
+  phone              String    @unique @db.VarChar(13)
+  role               Role
+  passwordHash       String    @db.VarChar(255)
+  mustChangePassword Boolean   @default(true)
+  active             Boolean   @default(true)
+  failedLoginCount   Int       @default(0)
+  lockedUntil        DateTime? @db.Timestamptz(3)
+  totpSecret         String?   @db.VarChar(64)
+  totpEnabled        Boolean   @default(false)
+  createdAt          DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime  @updatedAt @db.Timestamptz(3)
+
+  sessions            Session[]
+  permissionOverrides PermissionOverride[]
+  auditEntries        AuditLog[]
+}
+
+/// Individual grant (`granted = true`) or revocation (`false`) on top of the role defaults.
+model PermissionOverride {
+  employeeId String   @db.Uuid
+  permission String   @db.VarChar(64)
+  granted    Boolean
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@id([employeeId, permission])
+}
+
+/// Server-side session; the cookie carries a random token, only its SHA-256 is stored.
+model Session {
+  id         String    @id @default(uuid()) @db.Uuid
+  employeeId String    @db.Uuid
+  tokenHash  String    @unique @db.Char(64)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  lastSeenAt DateTime  @default(now()) @db.Timestamptz(3)
+  expiresAt  DateTime  @db.Timestamptz(3)
+  revokedAt  DateTime? @db.Timestamptz(3)
+  userAgent  String?   @db.VarChar(255)
+  ipAddress  String?   @db.VarChar(64)
+  employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, revokedAt])
+}
+
+model AuditLog {
+  id         BigInt    @id @default(autoincrement())
+  actorId    String?   @db.Uuid
+  action     String    @db.VarChar(64)
+  entityType String    @db.VarChar(32)
+  entityId   String?   @db.VarChar(64)
+  before     Json?
+  after      Json?
+  reason     String?   @db.VarChar(500)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  actor      Employee? @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([entityType, entityId, createdAt])
+  @@index([createdAt])
+}
+
+/// Single-row operational settings (id is always 1).
+model Settings {
+  id                 Int      @id @default(1)
+  sessionIdleMinutes Int      @default(30)
+  draftArchiveDays   Int      @default(30)
+  alertLeadMinutes   Int      @default(60)
+  updatedAt          DateTime @updatedAt @db.Timestamptz(3)
+}
+
+// ---------------------------------------------------------------------------
+// Customers
+// ---------------------------------------------------------------------------
+
 model Customer {
-  id        String   @id @default(uuid()) @db.Uuid
-  name      String   @db.VarChar(120)
-  phone     String   @unique @db.VarChar(13)
-  notes     String?  @db.VarChar(2000)
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  id         String            @id @default(uuid()) @db.Uuid
+  name       String            @db.VarChar(120)
+  phone      String            @unique @db.VarChar(13)
+  notes      String?           @db.VarChar(2000)
+  archivedAt DateTime?         @db.Timestamptz(3)
+  createdAt  DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime          @updatedAt @db.Timestamptz(3)
+  addresses  CustomerAddress[]
 
   @@index([createdAt, id])
+}
+
+model CustomerAddress {
+  id         String    @id @default(uuid()) @db.Uuid
+  customerId String    @db.Uuid
+  label      String    @db.VarChar(60)
+  details    String    @db.VarChar(500)
+  mapsUrl    String?   @db.VarChar(1000)
+  archivedAt DateTime? @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @db.Timestamptz(3)
+  customer   Customer  @relation(fields: [customerId], references: [id], onDelete: Restrict)
+
+  @@index([customerId])
 }
