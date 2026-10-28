@@ -1,0 +1,48 @@
+# One application colour (blue or green). deploy.sh runs it as project rms-<colour>
+# with COLOR and TAG exported. Runtime secrets come from app.env on the server,
+# never from the images or this file.
+services:
+  api:
+    image: ${IMAGE_PREFIX:?}-api:${TAG:?}
+    restart: unless-stopped
+    env_file: app.env
+    environment:
+      HOST: 0.0.0.0
+      PORT: "3001"
+      TRUST_PROXY: "true"
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    networks:
+      rms:
+        aliases: ["api-${COLOR:?}"]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  web:
+    image: ${IMAGE_PREFIX:?}-web:${TAG:?}
+    restart: unless-stopped
+    environment:
+      API_UPSTREAM: api-${COLOR:?}:3001
+    depends_on:
+      api: { condition: service_healthy }
+    security_opt: ["no-new-privileges:true"]
+    networks:
+      rms:
+        aliases: ["web-${COLOR:?}"]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  # One-off: docker compose -p rms-<colour> -f compose.app.yaml run --rm migrate
+  migrate:
+    image: ${IMAGE_PREFIX:?}-migrate:${TAG:?}
+    profiles: [migrate]
+    env_file: app.env
+    networks: [rms]
+
+networks:
+  rms:
+    external: true

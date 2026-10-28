@@ -204,3 +204,24 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  docker:
+    name: Build container images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build API, migration, and web images
+        run: |
+          docker build --target runtime -t rms-api:ci server
+          docker build --target migrate -t rms-migrate:ci server
+          docker build -t rms-web:ci .
+
+      - name: Check the API image runs as non-root and the web config is valid
+        run: |
+          test "$(docker run --rm --entrypoint id rms-api:ci -u)" != "0"
+          docker run --rm -e API_UPSTREAM=127.0.0.1:3001 rms-web:ci sh -c '/docker-entrypoint.sh nginx -t'

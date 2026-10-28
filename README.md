@@ -1,35 +1,58 @@
-# React + Vite
+# Restaurant Management System
 
-The independent development API and loopback-only PostgreSQL setup are documented
-in [server/README.md](server/README.md). Run frontend commands from the repository
-root and backend commands from `server/`. This backend is a development foundation,
-not a production-ready service.
+Internal Arabic (RTL) operations system for a Saudi restaurant handling banquet
+(ولائم) and daily orders: customers, catalog and banquet packages, orders, payments,
+delivery, kitchen reports, dashboards, and audit history.
 
-## Incremental TypeScript migration
+| Part | Stack | Location |
+| --- | --- | --- |
+| Web app | React 19, TypeScript, Vite, Tailwind, React Router, TanStack Query, React Hook Form, Zod | `src/` |
+| API | Node.js 24, TypeScript, Express 5, Zod, Prisma 7 | `server/` |
+| Database | PostgreSQL 17 | `server/prisma/` |
+| Deployment | Docker, Nginx, blue/green, GitHub Actions | `deploy/`, `.github/workflows/` |
 
-Run `npm run typecheck` to check frontend types without emitting files. Existing
-JavaScript and JSX remain supported (`allowJs: true`, `checkJs: false`); they are
-not fully type-checked until migrated. New or migrated `.ts` and `.tsx` files in
-`src` use strict checking and are included automatically. Vite client declarations
-provide types for asset imports and `import.meta.env`.
+Documentation:
 
-Migrate individual modules as needed while preserving the current routes and RTL
-UI. ESLint supports both JavaScript and TypeScript. Vite continues to handle
-transpilation and bundling; the separate typecheck command runs in PR CI alongside
-lint, tests, and build. Root JavaScript tool configuration files remain outside
-the frontend TypeScript project.
+- [docs/DECISIONS.md](docs/DECISIONS.md) — provisional business decisions (permissions, pricing/VAT,
+  workflows, refunds) awaiting product-owner confirmation. **Read this first.**
+- [server/README.md](server/README.md) — API, data model, security model, and backend tests.
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — staging/production setup, deployments, rollback, backups.
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## Local development
 
-Currently, two official plugins are available:
+Prerequisites: Node.js 24 and a local PostgreSQL 17 (the Docker Compose file in
+`server/compose.yaml` provides one on `127.0.0.1:5433`).
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```sh
+# API (terminal 1)
+cd server
+cp .env.example .env            # first time only
+npm ci && npm run generate
+docker compose up -d --wait     # or any local PostgreSQL matching .env
+npm run db:deploy
+npm run db:seed-dev             # synthetic catalog, drivers, demo customer
+npm run admin:create -- --name "مدير النظام" --phone 05XXXXXXXX   # prints a one-time password
+npm run dev
 
-## React Compiler
+# Web app (terminal 2, repository root)
+npm ci
+npm run dev                     # http://localhost:5173, proxies /api to 127.0.0.1:3001
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Sign in with the administrator phone and the printed temporary password; you will be
+asked to choose a new password.
 
-## Expanding the ESLint configuration
+## Checks
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```sh
+npm run lint && npm run typecheck && npm test && npm run build   # web app
+npm run test:e2e                                                 # Playwright, real API + PostgreSQL
+```
+
+Backend checks (unit and PostgreSQL integration tests) are described in
+`server/README.md`. Pull requests to `main` run all of them in CI, plus an end-to-end
+job and container image builds.
+
+The end-to-end suite starts the API and Vite itself. It needs a local PostgreSQL and
+uses a disposable `restaurant_e2e` database that it wipes and reseeds; override the
+connection with `E2E_DATABASE_URL` (loopback hosts and `*_e2e` names only).

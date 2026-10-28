@@ -1,0 +1,24 @@
+# Edge proxy, started once per server: docker compose -p rms-edge -f compose.edge.yaml up -d
+name: rms-edge
+services:
+  edge:
+    image: nginx:1.28-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SERVER_NAME: ${SERVER_NAME:?Set SERVER_NAME in deploy.env}
+    volumes:
+      - ./nginx/edge.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./nginx/active:/etc/nginx/active:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro
+    networks: [rms]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+networks:
+  rms:
+    external: true

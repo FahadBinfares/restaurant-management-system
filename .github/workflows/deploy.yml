@@ -1,0 +1,103 @@
+name: Build and deploy
+
+# Every merge to main builds immutable images tagged with the commit SHA.
+# Staging deploys automatically once configured; production deploys the SAME
+# images and waits for manual approval (configure required reviewers on the
+# "production" environment in GitHub settings).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing image tag (commit SHA) to redeploy
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  IMAGE_PREFIX: ghcr.io/fahadbinfares/restaurant-management-system
+
+jobs:
+  build:
+    name: Build images
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ github.sha }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Log in to GitHub Container Registry
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build and push
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_SHA}"
+          docker build --target runtime -t "$IMAGE_PREFIX-api:$tag" server
+          docker build --target migrate -t "$IMAGE_PREFIX-migrate:$tag" server
+          docker build -t "$IMAGE_PREFIX-web:$tag" .
+          for image in api migrate web; do docker push "$IMAGE_PREFIX-$image:$tag"; done
+
+  deploy-staging:
+    name: Deploy to staging
+    needs: build
+    if: always() && (needs.build.result == 'success' || github.event_name == 'workflow_dispatch') && vars.STAGING_HOST != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: staging
+    steps:
+      - name: Deploy over SSH
+        env:
+          TAG: ${{ needs.build.outputs.tag || inputs.tag }}
+          HOST: ${{ vars.STAGING_HOST }}
+          SSH_USER: ${{ vars.DEPLOY_USER }}
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.STAGING_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          # The tag reaches a remote shell: accept only a full commit SHA.
+          [[ "$TAG" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid tag" >&2; exit 1; }
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy "$SSH_USER@$HOST" "/opt/rms/deploy.sh '$TAG'"
+
+  deploy-production:
+    name: Deploy to production (manual approval)
+    needs: [build, deploy-staging]
+    if: always() && needs.deploy-staging.result == 'success' && vars.PRODUCTION_HOST != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - name: Deploy the image tested on staging
+        env:
+          TAG: ${{ needs.build.outputs.tag || inputs.tag }}
+          HOST: ${{ vars.PRODUCTION_HOST }}
+          SSH_USER: ${{ vars.DEPLOY_USER }}
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.PRODUCTION_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          # The tag reaches a remote shell: accept only a full commit SHA.
+          [[ "$TAG" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid tag" >&2; exit 1; }
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy "$SSH_USER@$HOST" "/opt/rms/deploy.sh '$TAG'"

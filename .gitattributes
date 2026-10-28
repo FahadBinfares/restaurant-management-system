@@ -1,0 +1,7 @@
+# Files executed or parsed on Linux servers must keep LF endings regardless of the
+# developer's platform.
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.template text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
