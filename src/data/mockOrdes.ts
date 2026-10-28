@@ -1,4 +1,22 @@
-export const mockOrders = [
+import type { OrderTotalLineItem } from "../utils/calculateOrderTotal";
+
+export interface MockOrderLineItem extends OrderTotalLineItem {
+  id: number;
+  name: string;
+}
+
+// These types describe the current fixtures, not the future order domain model.
+export interface MockOrder {
+  id: number;
+  customerId: number;
+  deliveryType: "delivery";
+  scheduledAt: string;
+  status: "confirmed" | "delivered" | "cancelled";
+  notes: string;
+  items: MockOrderLineItem[];
+}
+
+export const mockOrders: MockOrder[] = [
   {
     id: 1001,
     customerId: 12,
